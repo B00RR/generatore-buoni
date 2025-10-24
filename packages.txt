@@ -1,6 +1,9 @@
 libcairo2-dev
-libcairo2
+libcairo2  
 pkg-config
 python3-dev
-wkhtmltopdf
+libreoffice-writer
+libreoffice-common
+libreoffice-core
+default-jre-headless
 xvfb
