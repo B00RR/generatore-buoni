@@ -1,6 +1,6 @@
 streamlit
 python-docx
 PyPDF2
-fitz
+pymupdf
 cairosvg
 Pillow
