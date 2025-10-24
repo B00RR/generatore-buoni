@@ -2,4 +2,4 @@ streamlit
 python-docx
 cairosvg
 PyPDF2
-python-docx2pdf==0.1.0
+mammoth
