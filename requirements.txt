@@ -2,3 +2,5 @@ streamlit
 python-docx
 cairosvg
 PyPDF2
+PyMuPDF
+Pillow
