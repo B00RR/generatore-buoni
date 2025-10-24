@@ -9,14 +9,12 @@ from docx.shared import Inches
 from docx.oxml.ns import qn
 import subprocess
 
-# Configurazione pagina
 st.set_page_config(
     page_title="Generatore Buoni Carburante",
     page_icon="⛽",
     layout="centered"
 )
 
-# CSS personalizzato
 st.markdown("""
 <style>
     .main-title {
@@ -42,22 +40,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Titolo
 st.markdown('<h1 class="main-title">🎫 Generatore Buoni Carburante</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Genera i tuoi buoni in pochi click</p>', unsafe_allow_html=True)
 
-# Session state
 if 'step' not in st.session_state:
     st.session_state.step = 1
 
-# Funzioni
 def convert_svg_to_png(svg_data, output_path):
     try:
         import cairosvg
         cairosvg.svg2png(bytestring=svg_data, write_to=output_path)
         return True
-    except Exception as e:
-        st.error(f"Errore conversione SVG: {e}")
+    except:
         return False
 
 def extract_voucher_number(folder_name):
@@ -106,7 +100,6 @@ def process_buoni(template_file, zip_file, progress_bar):
             
             doc = Document(template_path)
             
-            # Sostituisci numero
             for para in doc.paragraphs:
                 if 'Buono n.' in para.text and 'valido' in para.text:
                     parti = para.text.split('Buono n.')
@@ -120,7 +113,6 @@ def process_buoni(template_file, zip_file, progress_bar):
                                 para.runs[0].text = nuovo
                             break
             
-            # Sostituisci QR
             if len(doc.paragraphs) > 5:
                 para = doc.paragraphs[5]
                 for run in list(para.runs):
@@ -140,6 +132,49 @@ def process_buoni(template_file, zip_file, progress_bar):
         st.error(f"Errore: {e}")
         return None, 0
 
+def convert_word_to_pdf_wkhtmltopdf(docx_path, pdf_path):
+    """Converte Word in PDF usando wkhtmltopdf"""
+    try:
+        # Converti Word in HTML temporaneo
+        import mammoth
+        with open(docx_path, "rb") as docx_file:
+            result = mammoth.convert_to_html(docx_file)
+            html_content = result.value
+        
+        # Salva HTML temporaneo
+        html_path = docx_path.replace('.docx', '.html')
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(f"""
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body {{ font-family: Arial; margin: 2cm; }}
+                    img {{ max-width: 100%; }}
+                </style>
+            </head>
+            <body>{html_content}</body>
+            </html>
+            """)
+        
+        # Converti HTML in PDF con wkhtmltopdf
+        subprocess.run([
+            'wkhtmltopdf',
+            '--enable-local-file-access',
+            '--quiet',
+            html_path,
+            pdf_path
+        ], check=True, timeout=30)
+        
+        # Pulisci HTML temporaneo
+        os.remove(html_path)
+        
+        return os.path.exists(pdf_path)
+        
+    except Exception as e:
+        st.error(f"Errore conversione: {e}")
+        return False
+
 def create_pdf(output_folder, progress_bar):
     try:
         pdf_files = []
@@ -150,16 +185,15 @@ def create_pdf(output_folder, progress_bar):
                                  f"Conversione PDF {idx + 1}/{len(docx_files)}")
             
             docx_path = os.path.join(output_folder, docx_file)
-            
-            result = subprocess.run([
-                'libreoffice', '--headless', '--convert-to', 'pdf',
-                '--outdir', output_folder, docx_path
-            ], capture_output=True, timeout=30)
-            
             pdf_path = docx_path.replace('.docx', '.pdf')
-            if os.path.exists(pdf_path):
+            
+            if convert_word_to_pdf_wkhtmltopdf(docx_path, pdf_path):
                 pdf_files.append(pdf_path)
         
+        if not pdf_files:
+            return None
+        
+        # Unisci PDF
         from PyPDF2 import PdfMerger
         merger = PdfMerger()
         for pdf in sorted(pdf_files):
@@ -177,15 +211,12 @@ def create_pdf(output_folder, progress_bar):
 
 def create_zip(output_folder):
     zip_path = os.path.join(output_folder, 'buoni_generati.zip')
-    
     with ZipFile(zip_path, 'w', ZIP_DEFLATED) as zipf:
-        for file in os.listdir(output_folder):
+        for file in sorted(os.listdir(output_folder)):
             if file.endswith('.docx'):
                 zipf.write(os.path.join(output_folder, file), file)
-    
     return zip_path
 
-# INTERFACCIA
 if st.session_state.step == 1:
     st.markdown("### 📤 Carica i File")
     
@@ -193,13 +224,11 @@ if st.session_state.step == 1:
     
     with col1:
         template_file = st.file_uploader("📄 Template Word", type=['docx'])
-    
     with col2:
         zip_file = st.file_uploader("📦 ZIP QR Codes", type=['zip'])
     
     if template_file and zip_file:
         st.success("✅ File caricati!")
-        
         if st.button("🚀 Genera Buoni", type="primary", use_container_width=True):
             st.session_state.template = template_file
             st.session_state.zip = zip_file
@@ -208,7 +237,6 @@ if st.session_state.step == 1:
 
 elif st.session_state.step == 2:
     st.markdown("### ⚙️ Elaborazione...")
-    
     progress_bar = st.progress(0, "Inizio...")
     
     output_folder, count = process_buoni(
@@ -223,7 +251,7 @@ elif st.session_state.step == 2:
         st.session_state.step = 3
         st.rerun()
     else:
-        st.error("❌ Errore generazione")
+        st.error("❌ Errore")
         if st.button("Riprova"):
             st.session_state.step = 1
             st.rerun()
@@ -234,19 +262,13 @@ elif st.session_state.step == 3:
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("### 📥 Scegli Formato")
-    
-    formato = st.radio(
-        "Formato:",
-        ["PDF unico (per stampa)", "Word separati (ZIP)"],
-        label_visibility="collapsed"
-    )
+    formato = st.radio("", ["PDF unico (per stampa)", "Word separati (ZIP)"])
     
     if st.button("⬇️ Scarica", type="primary", use_container_width=True):
         progress = st.progress(0, "Preparazione...")
         
         if "PDF" in formato:
             pdf_path = create_pdf(st.session_state.output_folder, progress)
-            
             if pdf_path and os.path.exists(pdf_path):
                 with open(pdf_path, 'rb') as f:
                     st.download_button(
@@ -256,9 +278,10 @@ elif st.session_state.step == 3:
                         mime="application/pdf",
                         use_container_width=True
                     )
+            else:
+                st.error("❌ Errore creazione PDF. Usa l'opzione ZIP.")
         else:
             zip_path = create_zip(st.session_state.output_folder)
-            
             if os.path.exists(zip_path):
                 with open(zip_path, 'rb') as f:
                     st.download_button(
@@ -274,7 +297,4 @@ elif st.session_state.step == 3:
         st.rerun()
 
 st.markdown("---")
-st.markdown(
-    "<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni Carburante</p>",
-    unsafe_allow_html=True
-)
+st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni</p>", unsafe_allow_html=True)
