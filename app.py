@@ -8,6 +8,7 @@ from docx import Document
 from docx.shared import Inches
 from docx.oxml.ns import qn
 import subprocess
+import time
 
 st.set_page_config(
     page_title="Generatore Buoni Carburante",
@@ -132,117 +133,83 @@ def process_buoni(template_file, zip_file, progress_bar):
         st.error(f"Errore: {e}")
         return None, 0
 
-def convert_word_to_pdf_wkhtmltopdf(docx_path, pdf_path):
-    """Converte Word in PDF preservando meglio i font"""
+def convert_docx_to_pdf_libreoffice(docx_path, output_folder):
+    """Converti Word in PDF usando LibreOffice - mantiene layout identico"""
     try:
-        import mammoth
+        # Verifica che LibreOffice sia installato
+        result = subprocess.run(['which', 'libreoffice'], 
+                              capture_output=True, text=True)
         
-        with open(docx_path, "rb") as docx_file:
-            convert_result = mammoth.convert_to_html(
-                docx_file,
-                style_map="""
-                p[style-name='Normal'] => p:fresh
-                r[style-name='Strong'] => strong
-                """
-            )
-            html_content = convert_result.value
+        if result.returncode != 0:
+            st.error("LibreOffice non trovato")
+            return None
         
-        html_path = docx_path.replace('.docx', '.html')
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    @page {{
-                        size: A4;
-                        margin: 2cm;
-                    }}
-                    body {{
-                        font-family: 'Calibri', 'Arial', 'Helvetica', sans-serif;
-                        font-size: 11pt;
-                        line-height: 1.4;
-                        color: #000000;
-                        margin: 0;
-                        padding: 0;
-                    }}
-                    p {{
-                        margin: 0 0 10px 0;
-                        font-family: 'Calibri', 'Arial', sans-serif;
-                    }}
-                    strong, b {{
-                        font-weight: bold;
-                        font-family: 'Calibri', 'Arial', sans-serif;
-                    }}
-                    img {{
-                        max-width: 100%;
-                        height: auto;
-                        display: block;
-                        margin: 10px auto;
-                    }}
-                    h1, h2, h3 {{
-                        font-family: 'Calibri', 'Arial', sans-serif;
-                        margin: 10px 0;
-                    }}
-                    pre {{
-                        font-family: 'Calibri', 'Courier New', monospace;
-                        white-space: pre-wrap;
-                    }}
-                </style>
-            </head>
-            <body>
-                {html_content}
-            </body>
-            </html>
-            """)
+        # Converti usando LibreOffice in headless mode
+        pdf_filename = os.path.basename(docx_path).replace('.docx', '.pdf')
         
-        subprocess.run([
-            'wkhtmltopdf',
-            '--enable-local-file-access',
-            '--quiet',
-            '--page-size', 'A4',
-            '--margin-top', '20mm',
-            '--margin-bottom', '20mm',
-            '--margin-left', '20mm',
-            '--margin-right', '20mm',
-            '--encoding', 'UTF-8',
-            '--no-outline',
-            '--print-media-type',
-            html_path,
-            pdf_path
-        ], check=True, timeout=30)
+        # Usa xvfb-run per ambiente senza display
+        cmd = [
+            'xvfb-run',
+            '-a',
+            'libreoffice',
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', output_folder,
+            docx_path
+        ]
         
-        if os.path.exists(html_path):
-            os.remove(html_path)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
         
-        return os.path.exists(pdf_path)
+        pdf_path = os.path.join(output_folder, pdf_filename)
         
+        if os.path.exists(pdf_path):
+            return pdf_path
+        else:
+            st.warning(f"PDF non creato per {os.path.basename(docx_path)}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        st.warning(f"Timeout conversione {os.path.basename(docx_path)}")
+        return None
     except Exception as e:
-        st.error(f"Errore conversione: {e}")
-        return False
+        st.warning(f"Errore: {str(e)}")
+        return None
 
 def create_pdf(output_folder, progress_bar):
     try:
         pdf_files = []
         docx_files = sorted([f for f in os.listdir(output_folder) if f.endswith('.docx')])
         
+        st.info("🔄 Conversione con LibreOffice... (può richiedere 1-2 minuti)")
+        
         for idx, docx_file in enumerate(docx_files):
             progress_bar.progress((idx + 1) / len(docx_files),
                                  f"Conversione PDF {idx + 1}/{len(docx_files)}")
             
             docx_path = os.path.join(output_folder, docx_file)
-            pdf_path = docx_path.replace('.docx', '.pdf')
+            pdf_path = convert_docx_to_pdf_libreoffice(docx_path, output_folder)
             
-            if convert_word_to_pdf_wkhtmltopdf(docx_path, pdf_path):
+            if pdf_path:
                 pdf_files.append(pdf_path)
+            
+            # Piccola pausa per evitare sovraccarico
+            time.sleep(0.5)
         
         if not pdf_files:
+            st.error("Nessun PDF creato!")
             return None
         
+        st.success(f"✅ {len(pdf_files)} PDF creati")
+        
+        # Unisci i PDF
         from PyPDF2 import PdfMerger
         merger = PdfMerger()
+        
         for pdf in sorted(pdf_files):
             merger.append(pdf)
         
@@ -309,7 +276,7 @@ elif st.session_state.step == 3:
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("### 📥 Scegli Formato")
-    formato = st.radio("", ["PDF unico (per stampa)", "Word separati (ZIP)"])
+    formato = st.radio("", ["PDF unico (layout identico al template)", "Word separati (ZIP)"])
     
     if st.button("⬇️ Scarica", type="primary", use_container_width=True):
         progress = st.progress(0, "Preparazione...")
@@ -325,8 +292,9 @@ elif st.session_state.step == 3:
                         mime="application/pdf",
                         use_container_width=True
                     )
+                st.success("✅ PDF identico al template!")
             else:
-                st.error("❌ Errore creazione PDF. Usa l'opzione ZIP.")
+                st.error("❌ Errore creazione PDF. Prova l'opzione ZIP.")
         else:
             zip_path = create_zip(st.session_state.output_folder)
             if os.path.exists(zip_path):
