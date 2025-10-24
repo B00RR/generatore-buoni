@@ -2,3 +2,4 @@ libcairo2-dev
 libcairo2
 pkg-config
 python3-dev
+libreoffice
