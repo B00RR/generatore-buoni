@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import re
-import shutil
 import tempfile
 from zipfile import ZipFile, ZIP_DEFLATED
 from docx import Document
@@ -133,51 +132,50 @@ def process_buoni(template_file, zip_file, progress_bar):
         st.error(f"Errore: {e}")
         return None, 0
 
-def convert_docx_to_pdf_libreoffice(docx_path, output_folder):
-    """Converti Word in PDF usando LibreOffice - mantiene layout identico"""
+def convert_docx_to_pdf_optimized(docx_path, output_folder):
+    """Converti Word in PDF con LibreOffice - massima fedeltà"""
     try:
-        # Verifica che LibreOffice sia installato
-        result = subprocess.run(['which', 'libreoffice'], 
-                              capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            st.error("LibreOffice non trovato")
-            return None
-        
-        # Converti usando LibreOffice in headless mode
         pdf_filename = os.path.basename(docx_path).replace('.docx', '.pdf')
+        pdf_path = os.path.join(output_folder, pdf_filename)
         
-        # Usa xvfb-run per ambiente senza display
+        # Comando LibreOffice ottimizzato
         cmd = [
-            'xvfb-run',
-            '-a',
-            'libreoffice',
+            'soffice',
             '--headless',
-            '--convert-to', 'pdf',
+            '--invisible',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
+            '--convert-to', 'pdf:writer_pdf_Export',
             '--outdir', output_folder,
             docx_path
         ]
+        
+        # Esegui con timeout esteso
+        env = os.environ.copy()
+        env['HOME'] = tempfile.gettempdir()
         
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=90,
+            env=env
         )
         
-        pdf_path = os.path.join(output_folder, pdf_filename)
+        # Attendi creazione file
+        for i in range(10):
+            if os.path.exists(pdf_path):
+                time.sleep(0.5)  # Attendi scrittura completa
+                return pdf_path
+            time.sleep(0.5)
         
-        if os.path.exists(pdf_path):
-            return pdf_path
-        else:
-            st.warning(f"PDF non creato per {os.path.basename(docx_path)}")
-            return None
-            
-    except subprocess.TimeoutExpired:
-        st.warning(f"Timeout conversione {os.path.basename(docx_path)}")
         return None
+            
     except Exception as e:
-        st.warning(f"Errore: {str(e)}")
+        st.warning(f"Errore conversione: {str(e)}")
         return None
 
 def create_pdf(output_folder, progress_bar):
@@ -185,28 +183,32 @@ def create_pdf(output_folder, progress_bar):
         pdf_files = []
         docx_files = sorted([f for f in os.listdir(output_folder) if f.endswith('.docx')])
         
-        st.info("🔄 Conversione con LibreOffice... (può richiedere 1-2 minuti)")
+        st.info("🔄 Conversione Word→PDF con LibreOffice...")
+        st.caption("Questa operazione può richiedere 2-3 minuti")
         
         for idx, docx_file in enumerate(docx_files):
             progress_bar.progress((idx + 1) / len(docx_files),
-                                 f"Conversione PDF {idx + 1}/{len(docx_files)}")
+                                 f"PDF {idx + 1}/{len(docx_files)}: {docx_file}")
             
             docx_path = os.path.join(output_folder, docx_file)
-            pdf_path = convert_docx_to_pdf_libreoffice(docx_path, output_folder)
+            pdf_path = convert_docx_to_pdf_optimized(docx_path, output_folder)
             
-            if pdf_path:
+            if pdf_path and os.path.exists(pdf_path):
                 pdf_files.append(pdf_path)
+                st.success(f"✓ {docx_file} → PDF", icon="✅")
+            else:
+                st.error(f"✗ {docx_file} fallito", icon="❌")
             
-            # Piccola pausa per evitare sovraccarico
-            time.sleep(0.5)
+            time.sleep(1)  # Pausa tra conversioni
         
         if not pdf_files:
             st.error("Nessun PDF creato!")
             return None
         
-        st.success(f"✅ {len(pdf_files)} PDF creati")
+        st.success(f"✅ {len(pdf_files)}/{len(docx_files)} PDF creati")
         
-        # Unisci i PDF
+        # Unisci PDF
+        st.info("📑 Unione PDF...")
         from PyPDF2 import PdfMerger
         merger = PdfMerger()
         
@@ -220,7 +222,7 @@ def create_pdf(output_folder, progress_bar):
         return output_pdf
         
     except Exception as e:
-        st.error(f"Errore PDF: {e}")
+        st.error(f"Errore: {e}")
         return None
 
 def create_zip(output_folder):
@@ -276,7 +278,7 @@ elif st.session_state.step == 3:
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("### 📥 Scegli Formato")
-    formato = st.radio("", ["PDF unico (layout identico al template)", "Word separati (ZIP)"])
+    formato = st.radio("", ["PDF unico (fedele al template)", "Word separati (ZIP)"])
     
     if st.button("⬇️ Scarica", type="primary", use_container_width=True):
         progress = st.progress(0, "Preparazione...")
@@ -292,9 +294,8 @@ elif st.session_state.step == 3:
                         mime="application/pdf",
                         use_container_width=True
                     )
-                st.success("✅ PDF identico al template!")
             else:
-                st.error("❌ Errore creazione PDF. Prova l'opzione ZIP.")
+                st.error("Errore PDF. Usa opzione ZIP.")
         else:
             zip_path = create_zip(st.session_state.output_folder)
             if os.path.exists(zip_path):
@@ -312,4 +313,4 @@ elif st.session_state.step == 3:
         st.rerun()
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni Carburante</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni</p>", unsafe_allow_html=True)
