@@ -133,41 +133,89 @@ def process_buoni(template_file, zip_file, progress_bar):
         return None, 0
 
 def convert_word_to_pdf_wkhtmltopdf(docx_path, pdf_path):
-    """Converte Word in PDF usando wkhtmltopdf"""
+    """Converte Word in PDF preservando meglio i font"""
     try:
-        # Converti Word in HTML temporaneo
         import mammoth
-        with open(docx_path, "rb") as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-            html_content = result.value
         
-        # Salva HTML temporaneo
+        with open(docx_path, "rb") as docx_file:
+            convert_result = mammoth.convert_to_html(
+                docx_file,
+                style_map="""
+                p[style-name='Normal'] => p:fresh
+                r[style-name='Strong'] => strong
+                """
+            )
+            html_content = convert_result.value
+        
         html_path = docx_path.replace('.docx', '.html')
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(f"""
+            <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body {{ font-family: Arial; margin: 2cm; }}
-                    img {{ max-width: 100%; }}
+                    @page {{
+                        size: A4;
+                        margin: 2cm;
+                    }}
+                    body {{
+                        font-family: 'Calibri', 'Arial', 'Helvetica', sans-serif;
+                        font-size: 11pt;
+                        line-height: 1.4;
+                        color: #000000;
+                        margin: 0;
+                        padding: 0;
+                    }}
+                    p {{
+                        margin: 0 0 10px 0;
+                        font-family: 'Calibri', 'Arial', sans-serif;
+                    }}
+                    strong, b {{
+                        font-weight: bold;
+                        font-family: 'Calibri', 'Arial', sans-serif;
+                    }}
+                    img {{
+                        max-width: 100%;
+                        height: auto;
+                        display: block;
+                        margin: 10px auto;
+                    }}
+                    h1, h2, h3 {{
+                        font-family: 'Calibri', 'Arial', sans-serif;
+                        margin: 10px 0;
+                    }}
+                    pre {{
+                        font-family: 'Calibri', 'Courier New', monospace;
+                        white-space: pre-wrap;
+                    }}
                 </style>
             </head>
-            <body>{html_content}</body>
+            <body>
+                {html_content}
+            </body>
             </html>
             """)
         
-        # Converti HTML in PDF con wkhtmltopdf
         subprocess.run([
             'wkhtmltopdf',
             '--enable-local-file-access',
             '--quiet',
+            '--page-size', 'A4',
+            '--margin-top', '20mm',
+            '--margin-bottom', '20mm',
+            '--margin-left', '20mm',
+            '--margin-right', '20mm',
+            '--encoding', 'UTF-8',
+            '--no-outline',
+            '--print-media-type',
             html_path,
             pdf_path
         ], check=True, timeout=30)
         
-        # Pulisci HTML temporaneo
-        os.remove(html_path)
+        if os.path.exists(html_path):
+            os.remove(html_path)
         
         return os.path.exists(pdf_path)
         
@@ -193,7 +241,6 @@ def create_pdf(output_folder, progress_bar):
         if not pdf_files:
             return None
         
-        # Unisci PDF
         from PyPDF2 import PdfMerger
         merger = PdfMerger()
         for pdf in sorted(pdf_files):
@@ -297,4 +344,4 @@ elif st.session_state.step == 3:
         st.rerun()
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni Carburante</p>", unsafe_allow_html=True)
