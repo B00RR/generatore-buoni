@@ -278,7 +278,7 @@ elif st.session_state.step == 3:
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("### 📥 Scegli Formato")
-    formato = st.radio("", ["PDF unico (fedele al template)", "Word separati (ZIP)"])
+    formato = st.radio("Formato:", ["PDF unico (fedele al template)", "Word separati (ZIP)"], label_visibility="collapsed")
     
     if st.button("⬇️ Scarica", type="primary", use_container_width=True):
         progress = st.progress(0, "Preparazione...")
@@ -314,3 +314,4 @@ elif st.session_state.step == 3:
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #9CA3AF;'>⛽ Generatore Buoni</p>", unsafe_allow_html=True)
+
