@@ -8,7 +8,7 @@ import subprocess
 from PyPDF2 import PdfMerger
 import cairosvg
 from PIL import Image
-import fitz  # PyMuPDF
+import fitz  
 
 def convert_docx_to_pdf(docx_path, output_folder):
     cmd = [
@@ -105,3 +105,4 @@ if st.button("Genera PDF finale") and template_file and zip_file:
             st.success("PDF creato: QR in posizione e dimensione come nel template Word!")
     except Exception as e:
         st.error(f"Errore durante la generazione: {e}")
+
